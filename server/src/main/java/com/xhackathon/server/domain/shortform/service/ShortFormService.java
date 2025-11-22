@@ -13,6 +13,7 @@ import com.xhackathon.server.domain.user.entity.User;
 import com.xhackathon.server.domain.user.repository.UserRepository;
 import com.xhackathon.server.domain.follow.repository.FollowRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ShortFormService {
@@ -217,14 +219,14 @@ public class ShortFormService {
             shortForm.updateStatus(ShortFormStatus.PROCESSING_STT);
             shortFormRepository.save(shortForm);
             
-            // TODO: 실제 STT 및 AI 요약 처리
-            // 1. 비디오에서 음성 추출
-            // 2. STT API 호출
-            // 3. AI 요약 API 호출
-            // 4. 결과를 ShortFormAi에 저장
+            // AI Pod에 처리 요청 전송
+            boolean aiJobStarted = requestAiProcessing(shortForm.getVideoKey());
             
-            // 임시로 처리 완료 시뮬레이션 (실제로는 외부 API 콜백에서 처리)
-            simulateAiProcessingComplete(shortForm.getId());
+            if (!aiJobStarted) {
+                log.warn("AI 처리 요청 실패, 상태를 FAILED로 변경: {}", shortForm.getVideoKey());
+                shortForm.updateStatus(ShortFormStatus.FAILED);
+                shortFormRepository.save(shortForm);
+            }
             
         } catch (Exception e) {
             System.err.println("AI 처리 시작 실패: " + shortForm.getVideoKey() + " - " + e.getMessage());
@@ -235,30 +237,24 @@ public class ShortFormService {
         }
     }
     
-    private void simulateAiProcessingComplete(Long shortFormId) {
-        // 실제 구현에서는 이 메서드가 외부 API 콜백으로 호출됩니다
+    /**
+     * AI Pod에 처리 요청 전송
+     * 실제 구현에서는 HTTP 클라이언트로 AI Pod API 호출
+     */
+    private boolean requestAiProcessing(String videoKey) {
         try {
-            Thread.sleep(5000); // 5초 대기 (실제 처리 시간 시뮬레이션)
+            // TODO: 실제 AI Pod API 호출 구현
+            // HTTP POST 요청을 AI Pod의 /api/process 엔드포인트로 전송
+            // 요청 데이터: { "jobId": videoKey, "s3Key": videoKey, "callbackUrl": "http://backend/internal/jobs/{jobId}/complete" }
             
-            ShortFormAi aiRecord = shortFormAiRepository.findByShortFormId(shortFormId)
-                    .orElseThrow(() -> new IllegalArgumentException("AI record not found"));
+            log.info("AI 처리 요청 전송: {}", videoKey);
             
-            // 가짜 결과로 업데이트
-            aiRecord.updateSuccess(
-                    "안녕하세요, 저는 개발자입니다. 이 영상에서는 제 경험을 공유하고 싶습니다.",
-                    "개발자 자기소개 영상입니다.",
-                    "{\"keywords\": [\"개발자\", \"자기소개\", \"경험\"]}"
-            );
-            shortFormAiRepository.save(aiRecord);
-            
-            // 숏폼 상태를 완료로 변경
-            ShortForm shortForm = shortFormRepository.findById(shortFormId)
-                    .orElseThrow(() -> new IllegalArgumentException("ShortForm not found"));
-            shortForm.updateStatus(ShortFormStatus.READY_WITH_AI);
-            shortFormRepository.save(shortForm);
+            // 임시로 성공 반환 (실제로는 HTTP 응답 상태 확인)
+            return true;
             
         } catch (Exception e) {
-            System.err.println("AI 처리 완료 시뮬레이션 실패: " + e.getMessage());
+            log.error("AI 처리 요청 전송 실패: {} - {}", videoKey, e.getMessage(), e);
+            return false;
         }
     }
 }

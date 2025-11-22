@@ -255,6 +255,53 @@ AI 처리 관련 정보를 저장하는 엔티티입니다.
 - **처리 단계**: 음성 추출 → STT API 호출 → AI 요약 생성
 - **결과 저장**: transcript, summary, extraJson 필드에 저장
 
+### K8s 기반 AI Pod 연동
+- **아키텍처**: Backend Pod ↔ AI Pod (k3s 클러스터)
+- **Job ID**: 전체 S3 키 사용 (예: `videos/user-123/hamzzi.mp4`)
+- **콜백 URL**: `POST /internal/jobs/{jobId}/complete`
+
+### AI 콜백 시스템
+
+#### 콜백 요청 형식
+```http
+POST /internal/jobs/videos%2Fuser-123%2Fhamzzi.mp4/complete
+Content-Type: application/json
+
+{
+  "jobId": "videos/user-123/hamzzi.mp4",
+  "status": "SUCCESS",
+  "result": {
+    "transcript": "안녕하세요, 저는 개발자입니다...",
+    "summary": "개발자 자기소개 영상입니다.",
+    "keywords": ["개발자", "자기소개", "경험"],
+    "processingTime": 45.2
+  },
+  "error": null
+}
+```
+
+#### URL 인코딩 처리
+- **문제**: S3 키에 포함된 `/` 문자가 `%2F`로 URL 인코딩
+- **해결**: 백엔드에서 `decodeURIComponent()` 처리
+- **라우팅**: `{jobId:.*}` 패턴으로 `/` 포함 경로 파라미터 허용
+
+#### 콜백 처리 플로우
+```
+1. AI Pod에서 STT/요약 처리 완료
+2. Backend로 콜백 요청 전송
+3. URL 디코딩하여 실제 S3 키 복원
+4. videoKey로 ShortForm 및 ShortFormAi 조회
+5. 처리 결과를 DB에 저장
+6. 상태를 READY_WITH_AI로 변경
+```
+
+#### 구현된 컴포넌트
+- **InternalAiController**: `/internal/jobs/{jobId:.*}/complete` 엔드포인트
+- **AiCallbackService**: 콜백 처리 비즈니스 로직
+- **AiCallbackRequest/Response**: 콜백 전용 DTO
+- **URL 디코딩**: `URLDecoder.decode()` 처리
+- **트랜잭션 관리**: 성공/실패 시 원자적 상태 업데이트
+
 ## 사용자 연동 시스템
 
 ### 실제 User/Follow 도메인 연동
