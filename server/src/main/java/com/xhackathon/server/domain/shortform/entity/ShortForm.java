@@ -3,7 +3,6 @@ package com.xhackathon.server.domain.shortform.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.Type;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
@@ -83,6 +82,11 @@ public class ShortForm {
 
     public void updateStatus(ShortFormStatus status) {
         this.status = status;
+        this.updatedAt = OffsetDateTime.now();
+    }
+
+    public void updateTags(List<String> tags) {
+        this.tags = tags;
         this.updatedAt = OffsetDateTime.now();
     }
 }

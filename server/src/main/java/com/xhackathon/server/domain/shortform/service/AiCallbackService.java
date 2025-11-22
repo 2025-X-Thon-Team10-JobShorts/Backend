@@ -13,8 +13,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -106,6 +109,13 @@ public class AiCallbackService {
                     extraJson
             );
             shortFormAiRepository.save(aiRecord);
+            
+            // extraJson에서 태그 추출하여 ShortForm에 업데이트
+            List<String> tags = extractTagsFromExtraJson(extraJson, request, result);
+            if (tags != null && !tags.isEmpty()) {
+                shortForm.updateTags(tags);
+                log.info("태그 업데이트 완료 - shortFormId: {}, tags: {}", shortForm.getId(), tags);
+            }
             
             // ShortForm 상태 업데이트
             shortForm.updateStatus(ShortFormStatus.READY_WITH_AI);
@@ -210,6 +220,91 @@ public class AiCallbackService {
         } catch (JsonProcessingException e) {
             log.warn("extraJson 생성 실패, 빈 객체로 대체: {}", e.getMessage());
             return "{}";
+        }
+    }
+    
+    /**
+     * extraJson에서 태그(Keywords) 추출
+     * 
+     * @param extraJson extraJson 문자열
+     * @param request AI 콜백 요청
+     * @param result AI 결과 객체
+     * @return 태그 목록
+     */
+    private List<String> extractTagsFromExtraJson(String extraJson, AiCallbackRequest request, AiCallbackRequest.AiResult result) {
+        try {
+            List<String> tags = new ArrayList<>();
+            
+            // 1. result 객체에서 keywords 추출 (nested 구조)
+            if (result != null && result.getKeywords() != null && result.getKeywords().length > 0) {
+                tags.addAll(Arrays.asList(result.getKeywords()));
+                log.debug("result에서 태그 추출: {}", tags);
+                return tags;
+            }
+            
+            // 2. extraJson 문자열에서 keywords 추출
+            if (extraJson != null && !extraJson.trim().isEmpty() && extraJson.startsWith("{")) {
+                try {
+                    JsonNode extraJsonNode = objectMapper.readTree(extraJson);
+                    
+                    // keywords 필드 확인
+                    if (extraJsonNode.has("keywords") && extraJsonNode.get("keywords").isArray()) {
+                        for (JsonNode keywordNode : extraJsonNode.get("keywords")) {
+                            if (keywordNode.isTextual()) {
+                                tags.add(keywordNode.asText());
+                            }
+                        }
+                        if (!tags.isEmpty()) {
+                            log.debug("extraJson에서 keywords 추출: {}", tags);
+                            return tags;
+                        }
+                    }
+                    
+                    // tags 필드 확인 (대체 필드)
+                    if (tags.isEmpty() && extraJsonNode.has("tags") && extraJsonNode.get("tags").isArray()) {
+                        for (JsonNode tagNode : extraJsonNode.get("tags")) {
+                            if (tagNode.isTextual()) {
+                                tags.add(tagNode.asText());
+                            }
+                        }
+                        if (!tags.isEmpty()) {
+                            log.debug("extraJson에서 tags 추출: {}", tags);
+                            return tags;
+                        }
+                    }
+                } catch (Exception e) {
+                    log.debug("extraJson 파싱 실패: {}", e.getMessage());
+                }
+            }
+            
+            // 3. request의 meta에서 keywords 확인
+            if (tags.isEmpty() && request.getMeta() != null) {
+                Object keywordsObj = request.getMeta().get("keywords");
+                if (keywordsObj != null) {
+                    if (keywordsObj instanceof List) {
+                        @SuppressWarnings("unchecked")
+                        List<Object> keywordsList = (List<Object>) keywordsObj;
+                        for (Object keyword : keywordsList) {
+                            if (keyword != null) {
+                                tags.add(keyword.toString());
+                            }
+                        }
+                    } else if (keywordsObj instanceof String[]) {
+                        tags.addAll(Arrays.asList((String[]) keywordsObj));
+                    }
+                    if (!tags.isEmpty()) {
+                        log.debug("meta에서 keywords 추출: {}", tags);
+                        return tags;
+                    }
+                }
+            }
+            
+            log.debug("태그를 찾을 수 없음");
+            return tags;
+            
+        } catch (Exception e) {
+            log.warn("태그 추출 중 오류: {}", e.getMessage());
+            return new ArrayList<>();
         }
     }
 }
