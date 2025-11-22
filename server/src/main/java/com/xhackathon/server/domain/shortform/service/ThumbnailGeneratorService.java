@@ -18,10 +18,7 @@ import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -38,6 +35,7 @@ public class ThumbnailGeneratorService {
     private static final double FRAME_POSITION_SECONDS = 1.0; // 1초 지점에서 프레임 추출
     private static final int MAX_RETRY_ATTEMPTS = 3; // 최대 재시도 횟수
     private static final long RETRY_DELAY_MS = 2000; // 재시도 간격 (2초)
+    private static final long PARTIAL_DOWNLOAD_SIZE = 10 * 1024 * 1024; // 처음 10MB만 다운로드 (1초 분량 충분)
     
     /**
      * S3 비디오 파일에서 썸네일을 생성하고 S3에 업로드 (재시도 포함)
@@ -119,9 +117,55 @@ public class ThumbnailGeneratorService {
     }
     
     /**
-     * S3에서 비디오 파일을 임시 파일로 다운로드
+     * 비디오 파일 확장자 추출
+     */
+    private String getVideoExtension(String videoKey) {
+        int lastDotIndex = videoKey.lastIndexOf('.');
+        if (lastDotIndex > 0 && lastDotIndex < videoKey.length() - 1) {
+            return videoKey.substring(lastDotIndex);
+        }
+        // 확장자가 없으면 기본값으로 .mp4 사용
+        return ".mp4";
+    }
+    
+    /**
+     * S3에서 비디오 파일의 처음 부분만 다운로드 (Range 요청 사용)
+     * 처음 10MB만 다운로드하여 네트워크 트래픽과 시간을 절약
      */
     private Path downloadVideoFromS3(String bucket, String videoKey) {
+        try {
+            // Range 요청: 처음 PARTIAL_DOWNLOAD_SIZE 바이트만 다운로드
+            String range = "bytes=0-" + (PARTIAL_DOWNLOAD_SIZE - 1);
+            
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(videoKey)
+                    .range(range)  // Range 헤더 추가
+                    .build();
+            
+            ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getObjectRequest);
+            
+            // 원본 파일 확장자 유지하여 임시 파일 생성
+            String extension = getVideoExtension(videoKey);
+            Path tempFile = Files.createTempFile("video_partial_", extension);
+            Files.copy(s3Object, tempFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            
+            long fileSize = Files.size(tempFile);
+            log.debug("비디오 파일 부분 다운로드 완료: {} -> {} ({} bytes)", videoKey, tempFile, fileSize);
+            return tempFile;
+            
+        } catch (S3Exception | IOException e) {
+            log.error("S3에서 비디오 파일 부분 다운로드 실패: {} - {}", videoKey, e.getMessage());
+            // Range 요청이 실패하면 전체 다운로드로 폴백
+            log.info("Range 요청 실패, 전체 다운로드로 폴백: {}", videoKey);
+            return downloadFullVideoFromS3(bucket, videoKey);
+        }
+    }
+    
+    /**
+     * S3에서 전체 비디오 파일 다운로드 (폴백용)
+     */
+    private Path downloadFullVideoFromS3(String bucket, String videoKey) {
         try {
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                     .bucket(bucket)
@@ -130,15 +174,16 @@ public class ThumbnailGeneratorService {
             
             ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getObjectRequest);
             
-            // 임시 파일 생성
-            Path tempFile = Files.createTempFile("video_", ".mp4");
+            // 원본 파일 확장자 유지하여 임시 파일 생성
+            String extension = getVideoExtension(videoKey);
+            Path tempFile = Files.createTempFile("video_full_", extension);
             Files.copy(s3Object, tempFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             
-            log.debug("비디오 파일 다운로드 완료: {} -> {}", videoKey, tempFile);
+            log.debug("비디오 파일 전체 다운로드 완료: {} -> {}", videoKey, tempFile);
             return tempFile;
             
         } catch (S3Exception | IOException e) {
-            log.error("S3에서 비디오 파일 다운로드 실패: {} - {}", videoKey, e.getMessage());
+            log.error("S3에서 비디오 파일 전체 다운로드 실패: {} - {}", videoKey, e.getMessage());
             return null;
         }
     }
@@ -169,12 +214,13 @@ public class ThumbnailGeneratorService {
             }
             
             // Frame을 BufferedImage로 변환
-            Java2DFrameConverter converter = new Java2DFrameConverter();
-            BufferedImage image = converter.convert(frame);
-            
-            if (image == null) {
-                log.error("이미지 변환 실패");
-                return null;
+            BufferedImage image;
+            try (Java2DFrameConverter converter = new Java2DFrameConverter()) {
+                image = converter.convert(frame);
+                if (image == null) {
+                    log.error("이미지 변환 실패");
+                    return null;
+                }
             }
             
             // 썸네일 크기로 리사이즈
