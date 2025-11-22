@@ -29,3 +29,6 @@ logs/
 .spring-boot-devtools.properties
 
 .claude/
+
+application.yml
+application.properties
