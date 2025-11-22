@@ -31,9 +31,9 @@ public class AwsS3Service {
     @Value("${cloud.aws.s3.bucket}")
     private String bucket;
 
-    public String generateVideoKey(String fileName) {
+    public String generateVideoKey(String ownerPid, String fileName) {
         String uuid = UUID.randomUUID().toString();
-        return "videos/" + uuid + "_" + fileName;
+        return "videos/" + ownerPid + "/" + uuid + "_" + fileName;
     }
 
     public URL generatePresignedUploadUrl(String key, String mimeType) {
