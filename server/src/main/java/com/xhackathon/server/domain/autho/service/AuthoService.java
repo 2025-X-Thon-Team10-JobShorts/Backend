@@ -23,7 +23,6 @@ public class AuthoService {
     public SignupResponse signup(SignupRequest request) {
         String pid = buildPid(
                 request.getLoginId(),
-                request.getPassword(),
                 request.getRole().name(),
                 request.getDisplayName()
         );
@@ -53,7 +52,6 @@ public class AuthoService {
     public LoginResponse login(LoginRequest request) {
         String pid = buildPid(
                 request.getLoginId(),
-                request.getPassword(),
                 request.getRole().name(),
                 request.getDisplayName()
         );
@@ -67,7 +65,7 @@ public class AuthoService {
         }
     }
 
-    private String buildPid(String loginId, String password, String role, String displayName) {
-        return loginId + "_" + password + "_" + role + "_" + displayName;
+    private String buildPid(String loginId, String role, String displayName) {
+        return loginId + "_" + role + "_" + displayName;
     }
 }
