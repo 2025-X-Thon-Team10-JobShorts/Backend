@@ -4,7 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider;
 import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
@@ -22,7 +24,6 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AwsS3Service {
 
     private final S3Presigner presigner;
@@ -31,6 +32,18 @@ public class AwsS3Service {
 
     @Value("${cloud.aws.s3.bucket}")
     private String bucket;
+
+    public AwsS3Service(ThumbnailGeneratorService thumbnailGeneratorService) {
+        this.presigner = S3Presigner.builder()
+                .region(Region.AP_NORTHEAST_2)
+                .build();
+
+        this.s3Client = S3Client.builder()
+                .region(Region.AP_NORTHEAST_2)
+                .build();
+
+        this.thumbnailGeneratorService=thumbnailGeneratorService;
+    }
 
     public String generateVideoKey(String ownerPid, String fileName) {
         String uuid = UUID.randomUUID().toString();

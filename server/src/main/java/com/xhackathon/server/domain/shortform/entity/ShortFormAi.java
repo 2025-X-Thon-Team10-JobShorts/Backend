@@ -19,7 +19,7 @@ public class ShortFormAi {
     @Column(name = "short_form_id", nullable = false)
     private Long shortFormId;
 
-    @Column(name = "stt_provider", length = 64)
+    @Column(name = "stt_provider", length = 64, nullable = true)
     private String sttProvider;
 
     @Column(name = "stt_request_id", length = 255)
@@ -31,8 +31,9 @@ public class ShortFormAi {
     @Column(columnDefinition = "text")
     private String summary;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "extra_json", columnDefinition = "jsonb")
-    private String extraJson;
+    private Object extraJson;
 
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Enumerated(EnumType.STRING)
@@ -59,7 +60,7 @@ public class ShortFormAi {
         return ai;
     }
 
-    public void updateSuccess(String transcript, String summary, String extraJson) {
+    public void updateSuccess(String transcript, String summary, Object extraJson) {
         this.transcript = transcript;
         this.summary = summary;
         this.extraJson = extraJson;
