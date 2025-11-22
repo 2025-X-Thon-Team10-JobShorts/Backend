@@ -2,6 +2,9 @@ package com.xhackathon.server.domain.shortform.controller;
 
 import com.xhackathon.server.domain.shortform.dto.request.ShortFormCreateRequest;
 import com.xhackathon.server.domain.shortform.dto.request.ShortFormUploadUrlRequest;
+import com.xhackathon.server.domain.shortform.dto.request.ShortFormReelsRequest;
+import com.xhackathon.server.domain.shortform.dto.request.ShortFormFeedRequest;
+import com.xhackathon.server.domain.shortform.dto.request.ShortFormSearchRequest;
 import com.xhackathon.server.domain.shortform.dto.response.*;
 import com.xhackathon.server.domain.shortform.service.ShortFormService;
 import lombok.RequiredArgsConstructor;
@@ -36,30 +39,25 @@ public class ShortFormController {
         return ResponseEntity.ok(shortFormService.getDetail(id));
     }
 
-    @GetMapping("/api/{id}")
+    @PostMapping("/api/{id}")
     public ResponseEntity<ShortFormReelsResponse> getShortFormReels(
             @PathVariable Long id,
-            @RequestHeader(value = "X-User-Pid", required = false) String currentUserPid
+            @RequestBody ShortFormReelsRequest request
     ) {
-        return ResponseEntity.ok(shortFormService.getReelsDetail(id, currentUserPid));
+        return ResponseEntity.ok(shortFormService.getReelsDetail(id, request.getCurrentUserPid()));
     }
 
-    @GetMapping("/api/feed")
+    @PostMapping("/api/feed")
     public ResponseEntity<ShortFormFeedResponse> getShortFormFeed(
-            @RequestParam(required = false) String pageParam,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestHeader(value = "X-User-Pid", required = false) String currentUserPid
+            @RequestBody ShortFormFeedRequest request
     ) {
-        return ResponseEntity.ok(shortFormService.getFeed(pageParam, size, currentUserPid));
+        return ResponseEntity.ok(shortFormService.getFeed(request.getPageParam(), request.getSize(), request.getCurrentUserPid()));
     }
 
-    @GetMapping("/api/search")
+    @PostMapping("/api/search")
     public ResponseEntity<ShortFormFeedResponse> searchShortFormsByTag(
-            @RequestParam String tag,
-            @RequestParam(required = false) String pageParam,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestHeader(value = "X-User-Pid", required = false) String currentUserPid
+            @RequestBody ShortFormSearchRequest request
     ) {
-        return ResponseEntity.ok(shortFormService.searchByTag(tag, pageParam, size, currentUserPid));
+        return ResponseEntity.ok(shortFormService.searchByTag(request.getTag(), request.getPageParam(), request.getSize(), request.getCurrentUserPid()));
     }
 }

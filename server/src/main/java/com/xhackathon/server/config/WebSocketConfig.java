@@ -17,6 +17,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(messageWebSocketHandler, "/ws/messages")
-                .setAllowedOrigins("*");
+                .setAllowedOrigins("https://jobshorts.vercel.app", "http://localhost:3000");
     }
 }
