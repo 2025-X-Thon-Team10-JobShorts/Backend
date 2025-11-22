@@ -15,9 +15,14 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -28,6 +33,7 @@ public class AwsS3Service {
     private final S3Presigner presigner;
     private final S3Client s3Client;
     private final ThumbnailGeneratorService thumbnailGeneratorService;
+    private final ObjectMapper objectMapper;
 
     @Value("${cloud.aws.s3.bucket}")
     private String bucket;
@@ -54,28 +60,14 @@ public class AwsS3Service {
     }
 
     public String getSummary(Long shortFormId, String videoKey) {
-
-        // videoKey: videos/{pid}/{uuid}_{originalName}.mp4
-        String[] parts = videoKey.split("/");
-        String fileName = parts[2]; // uuid_original.mp4
-
-        // uuid_original.mp4 → original
-        String originalPart = fileName.split("_", 2)[1]; // original.mp4
-        String originalName = originalPart.replace(".mp4", ""); // original
-
-        // summary 파일 경로: summary/summary_{original}.json
-        String key = "summary/summary_" + originalName + ".json";
-
-        GetObjectRequest req = GetObjectRequest.builder()
-                .bucket(bucket)
-                .key(key)
-                .build();
-
-        try (ResponseInputStream<GetObjectResponse> stream = s3Client.getObject(req)) {
-            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            throw new RuntimeException("[S3] Summary 파일 읽기 실패: " + key, e);
+        String summaryJson = getSummaryRaw(videoKey);
+        if (summaryJson == null) {
+            String originalName = videoKey.split("_", 2)[1];
+            String baseName = originalName.replace(".mp4", "");
+            String key = "summary/summary_" + baseName + ".json";
+            throw new RuntimeException("[S3] Summary 파일 읽기 실패: " + key);
         }
+        return summaryJson;
     }
 
 
@@ -146,5 +138,93 @@ public class AwsS3Service {
             return null;
         }
         return "https://cdn.example.com/" + thumbnailKey;
+    }
+
+    /**
+     * S3 Summary 파일에서 태그(Keywords) 정보 추출
+     * 
+     * @param videoKey 비디오 키
+     * @return 태그 목록 (없으면 빈 리스트 반환)
+     */
+    public List<String> extractTagsFromSummary(String videoKey) {
+        try {
+            // Summary 파일 읽기
+            String summaryJson = getSummaryRaw(videoKey);
+            if (summaryJson == null || summaryJson.trim().isEmpty()) {
+                log.warn("Summary 파일이 비어있음: {}", videoKey);
+                return Collections.emptyList();
+            }
+
+            // JSON 파싱
+            JsonNode jsonNode = objectMapper.readTree(summaryJson);
+            List<String> tags = new ArrayList<>();
+
+            // 1. keywords 필드 확인 (AI 콜백에서 사용하는 필드)
+            if (jsonNode.has("keywords") && jsonNode.get("keywords").isArray()) {
+                for (JsonNode keywordNode : jsonNode.get("keywords")) {
+                    if (keywordNode.isTextual()) {
+                        tags.add(keywordNode.asText());
+                    }
+                }
+            }
+
+            // 2. tags 필드 확인 (대체 필드)
+            if (tags.isEmpty() && jsonNode.has("tags") && jsonNode.get("tags").isArray()) {
+                for (JsonNode tagNode : jsonNode.get("tags")) {
+                    if (tagNode.isTextual()) {
+                        tags.add(tagNode.asText());
+                    }
+                }
+            }
+
+            // 3. extraJson 내부의 keywords 확인 (extraJson이 문자열인 경우)
+            if (tags.isEmpty() && jsonNode.has("extraJson")) {
+                String extraJsonStr = jsonNode.get("extraJson").asText();
+                if (extraJsonStr != null && !extraJsonStr.isEmpty() && extraJsonStr.startsWith("{")) {
+                    try {
+                        JsonNode extraJsonNode = objectMapper.readTree(extraJsonStr);
+                        if (extraJsonNode.has("keywords") && extraJsonNode.get("keywords").isArray()) {
+                            for (JsonNode keywordNode : extraJsonNode.get("keywords")) {
+                                if (keywordNode.isTextual()) {
+                                    tags.add(keywordNode.asText());
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.debug("extraJson 파싱 실패: {}", e.getMessage());
+                    }
+                }
+            }
+
+            log.info("Summary에서 태그 추출 완료 - videoKey: {}, tags: {}", videoKey, tags);
+            return tags;
+
+        } catch (Exception e) {
+            log.error("Summary에서 태그 추출 실패 - videoKey: {}, error: {}", videoKey, e.getMessage(), e);
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Summary 파일을 읽어서 원본 JSON 문자열 반환 (내부 메서드)
+     */
+    private String getSummaryRaw(String videoKey) {
+        try {
+            String originalName = videoKey.split("_", 2)[1];
+            String baseName = originalName.replace(".mp4", "");
+            String key = "summary/summary_" + baseName + ".json";
+
+            GetObjectRequest req = GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .build();
+
+            try (ResponseInputStream<GetObjectResponse> stream = s3Client.getObject(req)) {
+                return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            }
+        } catch (Exception e) {
+            log.debug("Summary 파일 읽기 실패 (파일이 없을 수 있음): {}", videoKey);
+            return null;
+        }
     }
 }

@@ -5,6 +5,8 @@ import com.xhackathon.server.domain.shortform.dto.response.AiCallbackResponse;
 import com.xhackathon.server.domain.shortform.service.AiCallbackService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,6 +20,9 @@ import java.nio.charset.StandardCharsets;
 public class InternalAiController {
 
     private final AiCallbackService aiCallbackService;
+    
+    @Value("${app.internal.token:}")
+    private String internalToken;
 
     /**
      * AI Pod에서 처리 완료 콜백을 수신하는 엔드포인트
@@ -29,13 +34,30 @@ public class InternalAiController {
     @PostMapping("/{jobId:.*}/complete")
     public ResponseEntity<AiCallbackResponse> handleAiCallback(
             @PathVariable("jobId") String encodedJobId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
             @RequestBody AiCallbackRequest request
     ) {
         try {
+            // 내부 토큰 인증
+            if (internalToken != null && !internalToken.isEmpty()) {
+                if (token == null || !internalToken.equals(token)) {
+                    log.warn("내부 토큰 인증 실패 - jobId: {}", encodedJobId);
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                            .body(AiCallbackResponse.failure("인증 실패"));
+                }
+            }
+            
             // URL 디코딩하여 실제 S3 키 복원
             String decodedJobId = URLDecoder.decode(encodedJobId, StandardCharsets.UTF_8);
             
             log.info("AI 콜백 수신 - jobId: {}, status: {}", decodedJobId, request.getStatus());
+            
+            // status 변환: "DONE" -> "SUCCESS"
+            String normalizedStatus = request.getStatus();
+            if ("DONE".equalsIgnoreCase(normalizedStatus)) {
+                normalizedStatus = "SUCCESS";
+                request.setStatus(normalizedStatus);
+            }
             
             // jobId 일치 확인
             if (!decodedJobId.equals(request.getJobId())) {
@@ -65,7 +87,16 @@ public class InternalAiController {
      * AI 처리 상태 확인용 헬스체크 엔드포인트
      */
     @GetMapping("/health")
-    public ResponseEntity<String> healthCheck() {
-        return ResponseEntity.ok("AI Callback Service is running");
+    public ResponseEntity<String> healthCheck(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token
+    ) {
+        // 내부 토큰 검증 (설정된 경우)
+        if (internalToken != null && !internalToken.isEmpty()) {
+            if (token == null || !internalToken.equals(token)) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body("Unauthorized");
+            }
+        }
+        return ResponseEntity.ok("OK");
     }
 }
