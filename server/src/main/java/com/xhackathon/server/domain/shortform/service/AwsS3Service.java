@@ -90,7 +90,13 @@ public class AwsS3Service {
 
     public String generateThumbnailKey(String videoKey) {
         // 비디오 키에서 썸네일 키 생성 (확장자만 변경)
-        String baseName = videoKey.replace(".mp4", "");
+        int lastDotIndex = videoKey.lastIndexOf('.');
+        String baseName;
+        if (lastDotIndex > 0) {
+            baseName = videoKey.substring(0, lastDotIndex);
+        } else {
+            baseName = videoKey;
+        }
         return baseName + "_thumbnail.jpg";
     }
 
@@ -223,7 +229,14 @@ public class AwsS3Service {
     private String getSummaryRaw(String videoKey) {
         try {
             String originalName = videoKey.split("_", 2)[1];
-            String baseName = originalName.replace(".mp4", "");
+            // 확장자 제거 (모든 비디오 포맷 지원)
+            int lastDotIndex = originalName.lastIndexOf('.');
+            String baseName;
+            if (lastDotIndex > 0) {
+                baseName = originalName.substring(0, lastDotIndex);
+            } else {
+                baseName = originalName;
+            }
             String key = "summary/summary_" + baseName + ".json";
 
             GetObjectRequest req = GetObjectRequest.builder()
