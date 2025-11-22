@@ -2,9 +2,7 @@ package com.xhackathon.server.domain.shortform.controller;
 
 import com.xhackathon.server.domain.shortform.dto.request.ShortFormCreateRequest;
 import com.xhackathon.server.domain.shortform.dto.request.ShortFormUploadUrlRequest;
-import com.xhackathon.server.domain.shortform.dto.response.ShortFormDetailResponse;
-import com.xhackathon.server.domain.shortform.dto.response.ShortFormResponse;
-import com.xhackathon.server.domain.shortform.dto.response.ShortFormUploadUrlResponse;
+import com.xhackathon.server.domain.shortform.dto.response.*;
 import com.xhackathon.server.domain.shortform.service.ShortFormService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -36,5 +34,22 @@ public class ShortFormController {
     @GetMapping("/{id}")
     public ResponseEntity<ShortFormDetailResponse> getShortFormDetail(@PathVariable Long id) {
         return ResponseEntity.ok(shortFormService.getDetail(id));
+    }
+
+    @GetMapping("/api/{id}")
+    public ResponseEntity<ShortFormReelsResponse> getShortFormReels(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-User-Pid", required = false) String currentUserPid
+    ) {
+        return ResponseEntity.ok(shortFormService.getReelsDetail(id, currentUserPid));
+    }
+
+    @GetMapping("/api/feed")
+    public ResponseEntity<ShortFormFeedResponse> getShortFormFeed(
+            @RequestParam(required = false) String pageParam,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestHeader(value = "X-User-Pid", required = false) String currentUserPid
+    ) {
+        return ResponseEntity.ok(shortFormService.getFeed(pageParam, size, currentUserPid));
     }
 }

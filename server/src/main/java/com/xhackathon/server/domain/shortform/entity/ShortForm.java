@@ -6,6 +6,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 @Entity
 @Getter
@@ -34,6 +35,10 @@ public class ShortForm {
     @Column(name = "duration_sec")
     private Integer durationSec;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "tags", columnDefinition = "jsonb")
+    private List<String> tags;
+
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, columnDefinition = "short_form_status")
@@ -56,12 +61,14 @@ public class ShortForm {
                      String title,
                      String description,
                      String videoKey,
-                     Integer durationSec) {
+                     Integer durationSec,
+                     List<String> tags) {
         this.ownerPid = ownerPid;
         this.title = title;
         this.description = description;
         this.videoKey = videoKey;
         this.durationSec = durationSec;
+        this.tags = tags;
         this.status = ShortFormStatus.READY;   // 기본값 지정
         this.visibility = VisibilityType.PUBLIC;
         this.createdAt = OffsetDateTime.now();
