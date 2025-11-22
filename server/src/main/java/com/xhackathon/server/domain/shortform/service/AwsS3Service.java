@@ -55,10 +55,16 @@ public class AwsS3Service {
 
     public String getSummary(Long shortFormId, String videoKey) {
 
-        String originalName = videoKey.split("_", 2)[1];
-        String baseName = originalName.replace(".mp4", "");
+        // videoKey: videos/{pid}/{uuid}_{originalName}.mp4
+        String[] parts = videoKey.split("/");
+        String fileName = parts[2]; // uuid_original.mp4
 
-        String key = "summary/summary_" + baseName + ".json";
+        // uuid_original.mp4 → original
+        String originalPart = fileName.split("_", 2)[1]; // original.mp4
+        String originalName = originalPart.replace(".mp4", ""); // original
+
+        // summary 파일 경로: summary/summary_{original}.json
+        String key = "summary/summary_" + originalName + ".json";
 
         GetObjectRequest req = GetObjectRequest.builder()
                 .bucket(bucket)
@@ -71,6 +77,7 @@ public class AwsS3Service {
             throw new RuntimeException("[S3] Summary 파일 읽기 실패: " + key, e);
         }
     }
+
 
     public String generateVideoUrl(String videoKey) {
         // CloudFront 또는 S3 URL 생성
