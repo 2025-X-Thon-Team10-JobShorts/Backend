@@ -19,14 +19,16 @@ public interface ShortFormRepository extends JpaRepository<ShortForm, Long> {
     
     List<ShortForm> findByIdLessThanOrderByCreatedAtDesc(Long id, Pageable pageable);
     
-    @Query("SELECT s FROM ShortForm s WHERE " +
-           "(:tag IS NULL OR JSON_CONTAINS(s.tags, JSON_QUOTE(:tag))) " +
-           "ORDER BY s.createdAt DESC")
+    @Query(value = "SELECT * FROM short_form s WHERE " +
+           "(:tag IS NULL OR s.tags @> CAST('\"' || :tag || '\"' AS jsonb)) " +
+           "ORDER BY s.created_at DESC", 
+           nativeQuery = true)
     List<ShortForm> findByTagContaining(@Param("tag") String tag, Pageable pageable);
     
-    @Query("SELECT s FROM ShortForm s WHERE " +
-           "(:tag IS NULL OR JSON_CONTAINS(s.tags, JSON_QUOTE(:tag))) AND " +
+    @Query(value = "SELECT * FROM short_form s WHERE " +
+           "(:tag IS NULL OR s.tags @> CAST('\"' || :tag || '\"' AS jsonb)) AND " +
            "s.id < :lastId " +
-           "ORDER BY s.createdAt DESC")
+           "ORDER BY s.created_at DESC",
+           nativeQuery = true)
     List<ShortForm> findByTagContainingAndIdLessThan(@Param("tag") String tag, @Param("lastId") Long lastId, Pageable pageable);
 }
