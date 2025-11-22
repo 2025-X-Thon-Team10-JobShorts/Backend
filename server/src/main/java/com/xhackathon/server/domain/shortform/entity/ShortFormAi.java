@@ -31,9 +31,8 @@ public class ShortFormAi {
     @Column(columnDefinition = "text")
     private String summary;
 
-    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "extra_json", columnDefinition = "jsonb")
-    private Object extraJson;
+    private String extraJson;
 
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Enumerated(EnumType.STRING)
@@ -60,7 +59,7 @@ public class ShortFormAi {
         return ai;
     }
 
-    public void updateSuccess(String transcript, String summary, Object extraJson) {
+    public void updateSuccess(String transcript, String summary, String extraJson) {
         this.transcript = transcript;
         this.summary = summary;
         this.extraJson = extraJson;
