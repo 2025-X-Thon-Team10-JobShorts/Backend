@@ -1,10 +1,8 @@
 package com.xhackathon.server.domain.shortform.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -39,7 +37,7 @@ public class AwsS3Service {
     @Value("${cloud.aws.s3.bucket}")
     private String bucket;
 
-    public AwsS3Service(ThumbnailGeneratorService thumbnailGeneratorService) {
+    public AwsS3Service(ThumbnailGeneratorService thumbnailGeneratorService, ObjectMapper objectMapper) {
         this.presigner = S3Presigner.builder()
                 .region(Region.AP_NORTHEAST_2)
                 .build();
@@ -48,7 +46,8 @@ public class AwsS3Service {
                 .region(Region.AP_NORTHEAST_2)
                 .build();
 
-        this.thumbnailGeneratorService=thumbnailGeneratorService;
+        this.thumbnailGeneratorService = thumbnailGeneratorService;
+        this.objectMapper = objectMapper;
     }
 
     public String generateVideoKey(String ownerPid, String fileName) {
