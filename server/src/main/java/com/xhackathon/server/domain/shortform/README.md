@@ -50,6 +50,7 @@ shortform/
 - `videoKey`: S3 비디오 파일 키
 - `thumbnailKey`: S3 썸네일 파일 키
 - `durationSec`: 재생 시간(초)
+- `tags`: 태그 목록 (JSON 배열)
 - `status`: 처리 상태 (ShortFormStatus)
 - `visibility`: 가시성 설정 (VisibilityType)
 
@@ -59,8 +60,10 @@ AI 처리 관련 정보를 저장하는 엔티티입니다.
 **주요 필드:**
 - `shortFormId`: 연관된 숏폼 ID
 - `sttProvider`: STT 서비스 제공자
+- `sttRequestId`: STT 요청 ID
 - `transcript`: 음성 인식 결과
 - `summary`: AI 생성 요약
+- `extraJson`: 추가 AI 처리 결과 (JSON)
 - `status`: AI 처리 상태 (ShortFormAiStatus)
 - `errorMessage`: 오류 메시지
 
@@ -80,7 +83,7 @@ AI 처리 관련 정보를 저장하는 엔티티입니다.
 
 ### ShortFormAiStatus
 - `PENDING`: 처리 대기
-- `PROCESSING`: 처리 중
+- `RUNNING`: 처리 중
 - `DONE`: 처리 완료
 - `FAILED`: 처리 실패
 
@@ -115,7 +118,8 @@ AI 처리 관련 정보를 저장하는 엔티티입니다.
   "title": "내 첫 숏폼",
   "description": "숏폼 설명",
   "videoKey": "videos/uuid/video.mp4",
-  "durationSec": 30
+  "durationSec": 30,
+  "tags": ["frontend", "react"]
 }
 ```
 
@@ -142,7 +146,7 @@ AI 처리 관련 정보를 저장하는 엔티티입니다.
 
 **Endpoint**
 
-- `GET /api/short-forms/{id}`
+- `GET /short-forms/api/{id}`
 
 **Response**
 
@@ -170,7 +174,7 @@ AI 처리 관련 정보를 저장하는 엔티티입니다.
 
 **Endpoint**
 
-- `GET /api/short-forms/feed?pageParam=...&size=10`
+- `GET /short-forms/api/feed?pageParam=...&size=10`
 
 **Query Parameters:**
 - `pageParam`: 다음 페이지를 위한 커서 (첫 페이지에서는 생략)

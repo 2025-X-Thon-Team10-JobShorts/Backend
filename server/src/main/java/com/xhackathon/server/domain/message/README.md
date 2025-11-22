@@ -137,14 +137,23 @@ ws.send(JSON.stringify({
 - `id`: 스레드 고유 ID (PK)
 - `participant1Pid`, `participant2Pid`: 참여자 사용자 ID
 - `createdAt`, `updatedAt`: 생성/수정 시각
+- `messages`: 스레드에 속한 메시지 목록 (OneToMany 관계)
+
+**비즈니스 메서드:**
+- `isParticipant(String userPid)`: 사용자가 스레드 참여자인지 확인
+- `getOtherParticipant(String userPid)`: 상대방 참여자 ID 반환
+- `updateLastActivity()`: 마지막 활동 시간 업데이트
 
 ### Message 엔티티
 - `id`: 메시지 고유 ID (PK)
-- `threadId`: 소속 스레드 ID (FK)
+- `thread`: 소속 스레드 (ManyToOne 관계)
 - `senderPid`: 발신자 사용자 ID
 - `content`: 메시지 내용
 - `createdAt`: 생성 시각
 - `readAt`: 읽음 시각 (null이면 미읽음)
+
+**비즈니스 메서드:**
+- `markAsRead()`: 메시지를 읽음으로 표시
 
 ## 개발 가이드
 - 도메인별 패키지 구조 유지
