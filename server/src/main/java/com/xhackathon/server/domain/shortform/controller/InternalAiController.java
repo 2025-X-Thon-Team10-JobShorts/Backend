@@ -59,11 +59,17 @@ public class InternalAiController {
                 request.setStatus(normalizedStatus);
             }
             
-            // jobId 일치 확인
-            if (!decodedJobId.equals(request.getJobId())) {
-                log.warn("jobId 불일치 - URL: {}, Body: {}", decodedJobId, request.getJobId());
-                return ResponseEntity.badRequest()
-                        .body(AiCallbackResponse.failure("jobId 불일치"));
+            // jobId 설정: request body에 없으면 URL에서 가져온 값 사용
+            if (request.getJobId() == null || request.getJobId().isEmpty()) {
+                request.setJobId(decodedJobId);
+                log.debug("jobId를 URL에서 설정: {}", decodedJobId);
+            } else {
+                // jobId 일치 확인 (request body에 있는 경우만)
+                if (!decodedJobId.equals(request.getJobId())) {
+                    log.warn("jobId 불일치 - URL: {}, Body: {}", decodedJobId, request.getJobId());
+                    return ResponseEntity.badRequest()
+                            .body(AiCallbackResponse.failure("jobId 불일치"));
+                }
             }
             
             // AI 콜백 처리
