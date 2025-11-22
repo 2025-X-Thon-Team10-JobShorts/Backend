@@ -1,19 +1,20 @@
 # X Hackathon - API Server
 
-API를 제공하는 Spring Boot 서버입니다. `Spring Boot 3.3`, `Java 21`을 기반으로 실시간 메시징 기능을 제공합니다.
+API를 제공하는 Spring Boot 서버입니다. `Spring Boot 3.3`, `Java 21`을 기반으로 사용자 인증, 팔로우 시스템, 마이페이지 기능을 제공합니다.
 
 ## 주요 기능
-- **DM API**: 스레드 생성, 메시지 전송, 메시지 내역 조회
-- **실시간 WebSocket**: 실시간 메시지 알림
-- **PostgreSQL 연동**: 메시지 데이터 영구 저장
+- **Auth API**: 사용자 회원가입, 로그인
+- **Follow API**: 팔로우/언팔로우, 팔로워/팔로잉 목록 조회
+- **MyPage API**: 사용자 정보 조회 및 수정
+- **User API**: 사용자 데이터 관리
+- **PostgreSQL 연동**: 사용자 데이터 영구 저장
 - **OpenAPI 문서**: Swagger UI를 통한 API 문서화
 - **도메인 기반 아키텍처**: 관심사 분리된 패키지 구조
 
 ## 기술 스택
 - `Spring Boot 3.3.2`: 백엔드 프레임워크
 - `Spring Data JPA`: 데이터 액세스 레이어
-- `PostgreSQL`: 메시지 데이터베이스
-- `WebSocket`: 실시간 통신
+- `PostgreSQL`: 사용자 데이터베이스
 - `OpenAPI 3.0`: API 문서화
 - `Lombok`: 코드 간소화
 
@@ -23,21 +24,31 @@ server/
 ├── build.gradle
 ├── src/main/java/com/xhackathon/server/
 │   ├── ServerApplication.java
-│   ├── DataInitializer.java
 │   ├── domain/
-│   │   ├── message/                    # 메시지 도메인
-│   │   │   ├── controller/             # REST API 컨트롤러
-│   │   │   ├── service/                # 비즈니스 로직
+│   │   ├── autho/                      # 인증 도메인
+│   │   │   ├── controller/             # 회원가입, 로그인 API
+│   │   │   ├── service/                # 인증 비즈니스 로직
+│   │   │   └── dto/                    # 인증 DTO
+│   │   │       ├── request/            # 요청 DTO
+│   │   │       └── response/           # 응답 DTO
+│   │   ├── follow/                     # 팔로우 도메인
+│   │   │   ├── controller/             # 팔로우 API
+│   │   │   ├── service/                # 팔로우 비즈니스 로직
 │   │   │   ├── repository/             # 데이터 액세스
 │   │   │   ├── entity/                 # JPA 엔티티
-│   │   │   ├── dto/                    # 데이터 전송 객체
-│   │   │   │   ├── request/            # 요청 DTO
-│   │   │   │   └── response/           # 응답 DTO
-│   │   │   └── websocket/              # WebSocket 핸들러
+│   │   │   └── dto/                    # 팔로우 DTO
+│   │   │       ├── request/            # 요청 DTO
+│   │   │       └── response/           # 응답 DTO
+│   │   ├── mypage/                     # 마이페이지 도메인
+│   │   │   ├── controller/             # 마이페이지 API
+│   │   │   ├── service/                # 마이페이지 비즈니스 로직
+│   │   │   └── dto/                    # 마이페이지 DTO
+│   │   │       ├── request/            # 요청 DTO
+│   │   │       └── response/           # 응답 DTO
 │   │   └── user/                       # 사용자 도메인
-│   │       ├── entity/
-│   │       ├── repository/
-│   │       └── dto/
+│   │       ├── entity/                 # 사용자 엔티티
+│   │       ├── repository/             # 사용자 데이터 액세스
+│   │       └── dto/                    # 사용자 DTO
 │   └── common/                         # 공통 컴포넌트
 │       ├── config/                     # 설정 클래스
 │       ├── controller/                 # 공통 컨트롤러
@@ -71,22 +82,20 @@ cd server
 - **헬스 체크**: http://localhost:8080/api/health
 - **API 문서**: http://localhost:8080/v3/api-docs
 
-### 4. WebSocket 연결
-- **WebSocket URL**: `ws://localhost:8080/ws`
-
 ## API 엔드포인트
 
-### 스레드 관리
-- `GET /api/messages/threads` - 스레드 목록 조회
-- `POST /api/messages/threads` - 새 스레드 생성
+### 인증 관리
+- `POST /auth/signup` - 사용자 회원가입
+- `POST /auth/login` - 사용자 로그인
 
-### 메시지 관리  
-- `GET /api/messages/threads/{threadId}` - 메시지 내역 조회
-- `POST /api/messages/threads/{threadId}/messages` - 메시지 전송
+### 팔로우 관리
+- `POST /follow` - 팔로우/언팔로우 토글
+- `GET /followings` - 팔로잉 목록 조회
+- `GET /followers` - 팔로워 목록 조회
 
-### 실시간 기능
-- WebSocket을 통한 실시간 메시지 알림
-- 메시지 읽음 상태 실시간 업데이트
+### 마이페이지 관리
+- `POST /mypage/info` - 사용자 정보 조회
+- `PATCH /mypage/update` - 사용자 정보 수정
 
 ## 개발 가이드
 - 도메인별 패키지 구조 유지
