@@ -15,4 +15,10 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 
     //내 팔로워 찾기
     List<Follow> findByFolloweePid(String followeePid);
+
+    //팔로워 수 카운트
+    long countByFolloweePid(String followeePid);
+
+    //팔로잉 수 카운트
+    long countByFollowerPid(String followerPid);
 }

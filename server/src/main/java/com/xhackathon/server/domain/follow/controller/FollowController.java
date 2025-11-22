@@ -43,4 +43,18 @@ public class FollowController {
         List<String> followers = followService.getFollowers(request.getPid());
         return ResponseEntity.ok(followers);
     }
+
+    @GetMapping("/followers/count")
+    public ResponseEntity<Long> getFollowerCount(
+            @RequestBody FollowListRequest request) {
+        long count = followService.getFollowerCount(request.getPid());
+        return ResponseEntity.ok(count);
+    }
+
+    @GetMapping("/followings/count")
+    public ResponseEntity<Long> getFollowingCount(
+            @RequestBody FollowListRequest request) {
+        long count = followService.getFollowingCount(request.getPid());
+        return ResponseEntity.ok(count);
+    }
 }

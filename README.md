@@ -91,11 +91,27 @@ createdb xhackathon
 ```
 
 ### 2. 애플리케이션 실행
+
+#### 옵션 A: 로컬에서 직접 실행
 ```bash
 cd server
 ./gradlew clean build
 ./gradlew bootRun
 ```
+
+#### 옵션 B: Docker Compose로 실행 (권장)
+```bash
+# Docker 이미지 빌드 및 실행
+docker-compose up -d
+
+# 로그 확인
+docker-compose logs -f backend
+
+# 서비스 중지
+docker-compose down
+```
+
+Docker 사용 시 자세한 내용은 [DOCKER.md](./DOCKER.md)를 참고하세요.
 
 ### 3. API 확인
 - **Swagger UI**: http://localhost:8080/swagger-ui.html

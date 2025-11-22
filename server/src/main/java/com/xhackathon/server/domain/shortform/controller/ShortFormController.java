@@ -52,4 +52,14 @@ public class ShortFormController {
     ) {
         return ResponseEntity.ok(shortFormService.getFeed(pageParam, size, currentUserPid));
     }
+
+    @GetMapping("/api/search")
+    public ResponseEntity<ShortFormFeedResponse> searchShortFormsByTag(
+            @RequestParam String tag,
+            @RequestParam(required = false) String pageParam,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestHeader(value = "X-User-Pid", required = false) String currentUserPid
+    ) {
+        return ResponseEntity.ok(shortFormService.searchByTag(tag, pageParam, size, currentUserPid));
+    }
 }

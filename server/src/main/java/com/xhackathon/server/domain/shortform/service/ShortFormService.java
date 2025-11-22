@@ -147,6 +147,42 @@ public class ShortFormService {
         return ShortFormFeedResponse.of(data, nextPageParam, hasNextPage);
     }
 
+    @Transactional(readOnly = true)
+    public ShortFormFeedResponse searchByTag(String tag, String pageParam, int size, String currentUserPid) {
+        Pageable pageable = PageRequest.of(0, size + 1);
+        
+        List<ShortForm> shortForms;
+        if (pageParam == null) {
+            shortForms = shortFormRepository.findByTagContaining(tag, pageable);
+        } else {
+            Long cursorId = decodeCursor(pageParam);
+            shortForms = shortFormRepository.findByTagContainingAndIdLessThan(tag, cursorId, pageable);
+        }
+
+        boolean hasNextPage = shortForms.size() > size;
+        if (hasNextPage) {
+            shortForms = shortForms.subList(0, size);
+        }
+
+        List<ShortFormReelsResponse> data = shortForms.stream()
+                .<ShortFormReelsResponse>map(sf -> {
+                    OwnerInfo owner = getOwnerInfo(sf.getOwnerPid(), currentUserPid);
+                    String videoUrl = awsS3Service.generateVideoUrl(sf.getVideoKey());
+                    String thumbnailUrl = awsS3Service.getThumbnailUrl(sf.getThumbnailKey());
+                    
+                    Optional<ShortFormAi> aiOpt = shortFormAiRepository.findByShortFormId(sf.getId());
+                    String summary = aiOpt.map(ShortFormAi::getSummary).orElse("");
+                    ShortFormAiStatus aiStatus = aiOpt.map(ShortFormAi::getStatus).orElse(ShortFormAiStatus.PENDING);
+                    
+                    return ShortFormReelsResponse.of(sf, owner, videoUrl, thumbnailUrl, summary, aiStatus);
+                })
+                .toList();
+
+        String nextPageParam = hasNextPage ? encodeCursor(shortForms.get(shortForms.size() - 1).getId()) : null;
+
+        return ShortFormFeedResponse.of(data, nextPageParam, hasNextPage);
+    }
+
     private Long decodeCursor(String cursor) {
         try {
             return Long.parseLong(new String(Base64.getDecoder().decode(cursor)));
