@@ -25,7 +25,9 @@ public class ShortFormService {
 
     @Transactional(readOnly = true)
     public ShortFormUploadUrlResponse createUploadUrl(ShortFormUploadUrlRequest req) {
-        String videoKey = awsS3Service.generateVideoKey(req.getFileName());
+        String videoKey = awsS3Service.generateVideoKey(
+                req.getOwnerPid(),
+                req.getFileName());
         URL uploadUrl = awsS3Service.generatePresignedUploadUrl(videoKey, req.getMimeType());
 
         return new ShortFormUploadUrlResponse(uploadUrl.toString(), videoKey);
