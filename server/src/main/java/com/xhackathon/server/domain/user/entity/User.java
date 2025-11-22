@@ -83,4 +83,9 @@ public class User {
         this.updatedAt = OffsetDateTime.now();
     }
 
+    public void updateProfileImage(String imageKey) {
+        this.profileImageUrl = imageKey;
+        this.updatedAt = OffsetDateTime.now();
+    }
+
 }
