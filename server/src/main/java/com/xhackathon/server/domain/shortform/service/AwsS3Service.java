@@ -60,36 +60,12 @@ public class AwsS3Service {
     }
 
     public String getSummary(Long shortFormId, String videoKey) {
-<<<<<<< HEAD
         String summaryJson = getSummaryRaw(videoKey);
         if (summaryJson == null) {
             String originalName = videoKey.split("_", 2)[1];
             String baseName = originalName.replace(".mp4", "");
             String key = "summary/summary_" + baseName + ".json";
             throw new RuntimeException("[S3] Summary 파일 읽기 실패: " + key);
-=======
-
-        // videoKey: videos/{pid}/{uuid}_{originalName}.mp4
-        String[] parts = videoKey.split("/");
-        String fileName = parts[2]; // uuid_original.mp4
-
-        // uuid_original.mp4 → original
-        String originalPart = fileName.split("_", 2)[1]; // original.mp4
-        String originalName = originalPart.replace(".mp4", ""); // original
-
-        // summary 파일 경로: summary/summary_{original}.json
-        String key = "summary/summary_" + originalName + ".json";
-
-        GetObjectRequest req = GetObjectRequest.builder()
-                .bucket(bucket)
-                .key(key)
-                .build();
-
-        try (ResponseInputStream<GetObjectResponse> stream = s3Client.getObject(req)) {
-            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            throw new RuntimeException("[S3] Summary 파일 읽기 실패: " + key, e);
->>>>>>> 6402c31 ([FEAT] add company page)
         }
         return summaryJson;
     }
