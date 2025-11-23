@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -83,9 +84,33 @@ public class AwsS3Service {
     }
 
 
+    /**
+     * S3에서 비디오 다운로드를 위한 Pre-signed URL 생성
+     * Feed에서 비디오를 보여주기 위해 사용
+     * 
+     * @param videoKey S3 비디오 키
+     * @return Pre-signed URL (1시간 유효)
+     */
     public String generateVideoUrl(String videoKey) {
-        // CloudFront 또는 S3 URL 생성
-        return "https://cdn.example.com/" + videoKey;
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(videoKey)
+                    .build();
+
+            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofHours(1))  // 1시간 유효
+                    .getObjectRequest(getObjectRequest)
+                    .build();
+
+            URL presignedUrl = presigner.presignGetObject(presignRequest).url();
+            return presignedUrl.toString();
+            
+        } catch (Exception e) {
+            log.error("비디오 Pre-signed URL 생성 실패: {} - {}", videoKey, e.getMessage());
+            // 폴백: 기본 URL 반환
+            return "https://cdn.example.com/" + videoKey;
+        }
     }
 
     public String generateThumbnailKey(String videoKey) {
@@ -151,11 +176,36 @@ public class AwsS3Service {
         }
     }
 
+    /**
+     * S3에서 썸네일 다운로드를 위한 Pre-signed URL 생성
+     * 
+     * @param thumbnailKey S3 썸네일 키
+     * @return Pre-signed URL (1시간 유효), thumbnailKey가 null이면 null 반환
+     */
     public String getThumbnailUrl(String thumbnailKey) {
         if (thumbnailKey == null) {
             return null;
         }
-        return "https://cdn.example.com/" + thumbnailKey;
+        
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(thumbnailKey)
+                    .build();
+
+            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofHours(1))  // 1시간 유효
+                    .getObjectRequest(getObjectRequest)
+                    .build();
+
+            URL presignedUrl = presigner.presignGetObject(presignRequest).url();
+            return presignedUrl.toString();
+            
+        } catch (Exception e) {
+            log.error("썸네일 Pre-signed URL 생성 실패: {} - {}", thumbnailKey, e.getMessage());
+            // 폴백: 기본 URL 반환
+            return "https://cdn.example.com/" + thumbnailKey;
+        }
     }
 
     /**
