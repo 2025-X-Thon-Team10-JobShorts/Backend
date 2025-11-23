@@ -31,4 +31,6 @@ public interface ShortFormRepository extends JpaRepository<ShortForm, Long> {
            "ORDER BY s.created_at DESC",
            nativeQuery = true)
     List<ShortForm> findByTagContainingAndIdLessThan(@Param("tag") String tag, @Param("lastId") Long lastId, Pageable pageable);
+    
+    List<ShortForm> findByThumbnailKeyIsNull();
 }

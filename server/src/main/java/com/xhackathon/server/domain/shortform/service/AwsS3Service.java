@@ -82,6 +82,62 @@ public class AwsS3Service {
         }
         return summaryJson;
     }
+    
+    /**
+     * S3 Summary 파일에서 transcript 정보 추출
+     * 
+     * @param videoKey 비디오 키
+     * @return transcript 문자열 (없으면 빈 문자열 반환)
+     */
+    public String getTranscriptFromSummary(String videoKey) {
+        try {
+            String summaryJson = getSummaryRaw(videoKey);
+            if (summaryJson == null || summaryJson.trim().isEmpty()) {
+                log.debug("Summary 파일이 비어있음: {}", videoKey);
+                return "";
+            }
+
+            JsonNode jsonNode = objectMapper.readTree(summaryJson);
+            
+            if (jsonNode.has("transcript")) {
+                return jsonNode.get("transcript").asText();
+            }
+            
+            return "";
+
+        } catch (Exception e) {
+            log.error("Summary에서 transcript 추출 실패 - videoKey: {}, error: {}", videoKey, e.getMessage());
+            return "";
+        }
+    }
+    
+    /**
+     * S3 Summary 파일에서 요약 정보 추출 (summary 필드만)
+     * 
+     * @param videoKey 비디오 키
+     * @return summary 문자열 (없으면 빈 문자열 반환)
+     */
+    public String getSummaryFromSummary(String videoKey) {
+        try {
+            String summaryJson = getSummaryRaw(videoKey);
+            if (summaryJson == null || summaryJson.trim().isEmpty()) {
+                log.debug("Summary 파일이 비어있음: {}", videoKey);
+                return "";
+            }
+
+            JsonNode jsonNode = objectMapper.readTree(summaryJson);
+            
+            if (jsonNode.has("summary")) {
+                return jsonNode.get("summary").asText();
+            }
+            
+            return "";
+
+        } catch (Exception e) {
+            log.error("Summary에서 summary 추출 실패 - videoKey: {}, error: {}", videoKey, e.getMessage());
+            return "";
+        }
+    }
 
 
     /**

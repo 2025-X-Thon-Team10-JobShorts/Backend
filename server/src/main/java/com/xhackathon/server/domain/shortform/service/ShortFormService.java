@@ -35,6 +35,7 @@ public class ShortFormService {
     private final ShortFormAiRepository shortFormAiRepository;
     private final UserRepository userRepository;
     private final FollowRepository followRepository;
+    private final S3CrawlingService s3CrawlingService;
 
     @Transactional(readOnly = true)
     public ShortFormUploadUrlResponse createUploadUrl(ShortFormUploadUrlRequest req) {
@@ -65,6 +66,9 @@ public class ShortFormService {
         
         // AI 처리 시작
         startAiProcessingAsync(saved);
+        
+        // S3에 summary 파일이 있으면 태그 정보 업데이트
+        updateTagsFromSummaryAsync(saved);
 
         return ShortFormResponse.from(saved);
     }
@@ -75,9 +79,26 @@ public class ShortFormService {
         ShortForm sf = shortFormRepository.findById(shortFormId)
                 .orElseThrow(() -> new IllegalArgumentException("ShortForm not found"));
 
-        String summary = awsS3Service.getSummary(shortFormId, sf.getVideoKey());
+        try {
+            // Summary에서 상세 정보 추출
+            String summary = awsS3Service.getSummaryFromSummary(sf.getVideoKey());
+            String transcript = awsS3Service.getTranscriptFromSummary(sf.getVideoKey());
+            
+            // 비디오 및 썸네일 URL 생성
+            String videoUrl = awsS3Service.generateVideoUrl(sf.getVideoKey());
+            String thumbnailUrl = awsS3Service.getThumbnailUrl(sf.getThumbnailKey());
 
-        return ShortFormDetailResponse.of(sf, summary);
+            return ShortFormDetailResponse.of(sf, summary, transcript, videoUrl, thumbnailUrl);
+            
+        } catch (Exception e) {
+            log.warn("Summary 파일 읽기 실패, 기본 정보만 반환: {} - {}", sf.getVideoKey(), e.getMessage());
+            
+            // Summary 파일이 없거나 읽을 수 없는 경우 기본 정보만 반환
+            String videoUrl = awsS3Service.generateVideoUrl(sf.getVideoKey());
+            String thumbnailUrl = awsS3Service.getThumbnailUrl(sf.getThumbnailKey());
+            
+            return ShortFormDetailResponse.of(sf, "", "", videoUrl, thumbnailUrl);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -294,5 +315,42 @@ public class ShortFormService {
             log.error("AI 처리 요청 전송 실패: {} - {}", videoKey, e.getMessage(), e);
             return false;
         }
+    }
+    
+    /**
+     * S3 Summary 파일에서 태그 정보를 비동기로 업데이트
+     */
+    @Async
+    public void updateTagsFromSummaryAsync(ShortForm shortForm) {
+        try {
+            List<String> tags = awsS3Service.extractTagsFromSummary(shortForm.getVideoKey());
+            
+            if (!tags.isEmpty()) {
+                log.info("Summary에서 태그 추출 성공: {} - 태그 개수: {}", shortForm.getVideoKey(), tags.size());
+                
+                // DB 업데이트
+                updateShortFormTags(shortForm.getId(), tags);
+            } else {
+                log.debug("Summary 파일에서 태그를 찾을 수 없음: {}", shortForm.getVideoKey());
+            }
+            
+        } catch (Exception e) {
+            log.warn("Summary에서 태그 추출 중 오류 (정상적인 경우일 수 있음): {} - {}", 
+                     shortForm.getVideoKey(), e.getMessage());
+        }
+    }
+    
+    /**
+     * ShortForm의 태그 정보 업데이트
+     */
+    @Transactional
+    public void updateShortFormTags(Long shortFormId, List<String> tags) {
+        ShortForm shortForm = shortFormRepository.findById(shortFormId)
+                .orElseThrow(() -> new IllegalArgumentException("ShortForm not found: " + shortFormId));
+        
+        shortForm.updateTags(tags);
+        shortFormRepository.save(shortForm);
+        
+        log.info("ShortForm 태그 업데이트 완료: {} - 태그: {}", shortFormId, tags);
     }
 }
