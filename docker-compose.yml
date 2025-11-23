@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14-alpine
+    container_name: xhackathon-postgres
+    environment:
+      POSTGRES_DB: xhackathon
+      POSTGRES_USER: xhackathon
+      POSTGRES_PASSWORD: xhackathon_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xhackathon"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - xhackathon-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: doongmino0204/back-app:latest
+    container_name: xhackathon-backend
+    ports:
+      - "8080:8080"
+    environment:
+      # Database Configuration (k3s에서 환경 변수로 주입)
+      DB_URL: ${DB_URL:-jdbc:postgresql://postgres:5432/xhackathon}
+      DB_PASSWORD: ${DB_PASSWORD:-xhackathon_password}
+      
+      # Server Configuration
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      
+      # AWS S3 Configuration (k3s에서 환경 변수로 주입)
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      BUCKET: ${BUCKET:-}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY:-}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - xhackathon-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  xhackathon-network:
+    driver: bridge
+

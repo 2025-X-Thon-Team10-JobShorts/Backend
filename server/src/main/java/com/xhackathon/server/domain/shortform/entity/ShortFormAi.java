@@ -19,7 +19,7 @@ public class ShortFormAi {
     @Column(name = "short_form_id", nullable = false)
     private Long shortFormId;
 
-    @Column(name = "stt_provider", length = 64)
+    @Column(name = "stt_provider", length = 64, nullable = true)
     private String sttProvider;
 
     @Column(name = "stt_request_id", length = 255)

@@ -53,4 +53,14 @@ public class FollowService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public long getFollowerCount(String pid) {
+        return followRepository.countByFolloweePid(pid);
+    }
+
+    @Transactional(readOnly = true)
+    public long getFollowingCount(String pid) {
+        return followRepository.countByFollowerPid(pid);
+    }
+
 }

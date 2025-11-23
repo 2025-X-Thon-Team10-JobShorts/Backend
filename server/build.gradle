@@ -27,6 +27,11 @@ dependencies {
 
     implementation 'software.amazon.awssdk:s3:2.25.27'
     implementation 'software.amazon.awssdk:sts:2.25.27'
+    
+    // FFmpeg를 위한 JavaCV 라이브러리
+    // 플랫폼별 의존성 (Docker 빌드 시 linux-x86_64만 다운로드되도록 환경 변수로 제어)
+    implementation 'org.bytedeco:javacv-platform:1.5.8'
+    implementation 'org.bytedeco:ffmpeg-platform:5.1.2-1.5.8'
 
     runtimeOnly 'com.h2database:h2'
 
@@ -40,4 +45,8 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
 }
