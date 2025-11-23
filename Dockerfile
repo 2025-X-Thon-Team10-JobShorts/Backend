@@ -18,7 +18,10 @@ RUN chmod +x ./gradlew
 COPY server/src ./src
 
 # Build the application (skip tests, no daemon)
-RUN ./gradlew clean build -x test --no-daemon
+# FFmpeg 대용량 라이브러리 다운로드를 위한 플랫폼 지정 및 타임아웃 증가
+ENV ORG_BYTEDECO_JAVACPP_PLATFORM=linux-x86_64
+ENV GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.internal.http.connectionTimeout=600000 -Dorg.gradle.internal.http.socketTimeout=600000"
+RUN ./gradlew clean build -x test --no-daemon --refresh-dependencies
 
 # Find the built jar file
 RUN find /app/build/libs -name "*.jar" -not -name "*-plain.jar" -exec cp {} /app/app.jar \;

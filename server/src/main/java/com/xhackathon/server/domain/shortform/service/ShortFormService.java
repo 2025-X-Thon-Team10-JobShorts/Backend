@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.net.URL;
 import java.util.List;
@@ -24,18 +25,23 @@ import java.util.Base64;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
+import lombok.NonNull;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ShortFormService {
+    
+    // ShortForm DB 업데이트를 위한 락 맵 (shortFormId별 락)
+    private final ConcurrentHashMap<Long, ReentrantLock> shortFormUpdateLocks = new ConcurrentHashMap<>();
 
     private final ShortFormRepository shortFormRepository;
     private final AwsS3Service awsS3Service;
     private final ShortFormAiRepository shortFormAiRepository;
     private final UserRepository userRepository;
     private final FollowRepository followRepository;
-    private final S3CrawlingService s3CrawlingService;
 
     @Transactional(readOnly = true)
     public ShortFormUploadUrlResponse createUploadUrl(ShortFormUploadUrlRequest req) {
@@ -61,20 +67,20 @@ public class ShortFormService {
 
         ShortForm saved = shortFormRepository.save(shortForm);
 
-        // 썸네일 생성 비동기 처리
-        generateThumbnailAsync(saved);
+        // 썸네일 생성 비동기 처리 (ID만 전달)
+        generateThumbnailAsync(saved.getId(), saved.getVideoKey());
         
-        // AI 처리 시작
-        startAiProcessingAsync(saved);
+        // AI 처리 시작 (ID만 전달)
+        startAiProcessingAsync(saved.getId(), saved.getVideoKey());
         
-        // S3에 summary 파일이 있으면 태그 정보 업데이트
-        updateTagsFromSummaryAsync(saved);
+        // S3에 summary 파일이 있으면 태그 정보 업데이트 (ID만 전달)
+        updateTagsFromSummaryAsync(saved.getId(), saved.getVideoKey());
 
         return ShortFormResponse.from(saved);
     }
 
     @Transactional(readOnly = true)
-    public ShortFormDetailResponse getDetail(Long shortFormId) {
+    public ShortFormDetailResponse getDetail(@NonNull Long shortFormId) {
 
         ShortForm sf = shortFormRepository.findById(shortFormId)
                 .orElseThrow(() -> new IllegalArgumentException("ShortForm not found"));
@@ -107,7 +113,7 @@ public class ShortFormService {
     }
     
     @Transactional(readOnly = true)
-    public ShortFormReelsResponse getReelsDetail(Long shortFormId, String currentUserPid) {
+    public ShortFormReelsResponse getReelsDetail(@NonNull Long shortFormId, String currentUserPid) {
         ShortForm sf = shortFormRepository.findById(shortFormId)
                 .orElseThrow(() -> new IllegalArgumentException("ShortForm not found"));
 
@@ -149,21 +155,34 @@ public class ShortFormService {
             shortForms = shortForms.subList(0, size); // 마지막 항목 제거
         }
 
+        log.debug("=== Feed 데이터 생성 시작 ===");
+        log.debug("처리할 ShortForm 개수: {}", shortForms.size());
+        
         List<ShortFormReelsResponse> data = shortForms.stream()
                 .<ShortFormReelsResponse>map(sf -> {
-                    OwnerInfo owner = getOwnerInfo(sf.getOwnerPid(), currentUserPid);
-                    String videoUrl = awsS3Service.generateVideoUrl(sf.getVideoKey());
-                    String thumbnailUrl = awsS3Service.getThumbnailUrl(sf.getThumbnailKey());
-                    
-                    Optional<ShortFormAi> aiOpt = shortFormAiRepository.findByShortFormId(sf.getId());
-                    String summary = aiOpt.map(ShortFormAi::getSummary).orElse("");
-                    ShortFormAiStatus aiStatus = aiOpt.map(ShortFormAi::getStatus).orElse(ShortFormAiStatus.PENDING);
-                    
-                    return ShortFormReelsResponse.of(sf, owner, videoUrl, thumbnailUrl, summary, aiStatus);
+                    try {
+                        OwnerInfo owner = getOwnerInfo(sf.getOwnerPid(), currentUserPid);
+                        String videoUrl = awsS3Service.generateVideoUrl(sf.getVideoKey());
+                        String thumbnailUrl = awsS3Service.getThumbnailUrl(sf.getThumbnailKey());
+                        
+                        Optional<ShortFormAi> aiOpt = shortFormAiRepository.findByShortFormId(sf.getId());
+                        String summary = aiOpt.map(ShortFormAi::getSummary).orElse("");
+                        ShortFormAiStatus aiStatus = aiOpt.map(ShortFormAi::getStatus).orElse(ShortFormAiStatus.PENDING);
+                        
+                        return ShortFormReelsResponse.of(sf, owner, videoUrl, thumbnailUrl, summary, aiStatus);
+                    } catch (Exception e) {
+                        log.error("Feed 항목 처리 실패 (ShortForm ID: {}): {}", sf.getId(), e.getMessage());
+                        // 에러 발생 시 기본값으로 처리
+                        OwnerInfo defaultOwner = OwnerInfo.of(0L, "Unknown", null, false);
+                        String videoUrl = awsS3Service.generateVideoUrl(sf.getVideoKey());
+                        String thumbnailUrl = awsS3Service.getThumbnailUrl(sf.getThumbnailKey());
+                        return ShortFormReelsResponse.of(sf, defaultOwner, videoUrl, thumbnailUrl, "", ShortFormAiStatus.PENDING);
+                    }
                 })
+                .filter(response -> response.getVideoUrl() != null) // 비디오 URL이 없는 항목 제외
                 .toList();
 
-        String nextPageParam = hasNextPage ? encodeCursor(shortForms.get(shortForms.size() - 1).getId()) : null;
+        String nextPageParam = hasNextPage && !data.isEmpty() ? encodeCursor(shortForms.get(shortForms.size() - 1).getId()) : null;
 
         return ShortFormFeedResponse.of(data, nextPageParam, hasNextPage);
     }
@@ -187,19 +206,29 @@ public class ShortFormService {
 
         List<ShortFormReelsResponse> data = shortForms.stream()
                 .<ShortFormReelsResponse>map(sf -> {
-                    OwnerInfo owner = getOwnerInfo(sf.getOwnerPid(), currentUserPid);
-                    String videoUrl = awsS3Service.generateVideoUrl(sf.getVideoKey());
-                    String thumbnailUrl = awsS3Service.getThumbnailUrl(sf.getThumbnailKey());
-                    
-                    Optional<ShortFormAi> aiOpt = shortFormAiRepository.findByShortFormId(sf.getId());
-                    String summary = aiOpt.map(ShortFormAi::getSummary).orElse("");
-                    ShortFormAiStatus aiStatus = aiOpt.map(ShortFormAi::getStatus).orElse(ShortFormAiStatus.PENDING);
-                    
-                    return ShortFormReelsResponse.of(sf, owner, videoUrl, thumbnailUrl, summary, aiStatus);
+                    try {
+                        OwnerInfo owner = getOwnerInfo(sf.getOwnerPid(), currentUserPid);
+                        String videoUrl = awsS3Service.generateVideoUrl(sf.getVideoKey());
+                        String thumbnailUrl = awsS3Service.getThumbnailUrl(sf.getThumbnailKey());
+                        
+                        Optional<ShortFormAi> aiOpt = shortFormAiRepository.findByShortFormId(sf.getId());
+                        String summary = aiOpt.map(ShortFormAi::getSummary).orElse("");
+                        ShortFormAiStatus aiStatus = aiOpt.map(ShortFormAi::getStatus).orElse(ShortFormAiStatus.PENDING);
+                        
+                        return ShortFormReelsResponse.of(sf, owner, videoUrl, thumbnailUrl, summary, aiStatus);
+                    } catch (Exception e) {
+                        log.error("검색 항목 처리 실패 (ShortForm ID: {}): {}", sf.getId(), e.getMessage());
+                        // 에러 발생 시 기본값으로 처리
+                        OwnerInfo defaultOwner = OwnerInfo.of(0L, "Unknown", null, false);
+                        String videoUrl = awsS3Service.generateVideoUrl(sf.getVideoKey());
+                        String thumbnailUrl = awsS3Service.getThumbnailUrl(sf.getThumbnailKey());
+                        return ShortFormReelsResponse.of(sf, defaultOwner, videoUrl, thumbnailUrl, "", ShortFormAiStatus.PENDING);
+                    }
                 })
+                .filter(response -> response.getVideoUrl() != null) // 비디오 URL이 없는 항목 제외
                 .toList();
 
-        String nextPageParam = hasNextPage ? encodeCursor(shortForms.get(shortForms.size() - 1).getId()) : null;
+        String nextPageParam = hasNextPage && !data.isEmpty() ? encodeCursor(shortForms.get(shortForms.size() - 1).getId()) : null;
 
         return ShortFormFeedResponse.of(data, nextPageParam, hasNextPage);
     }
@@ -236,8 +265,8 @@ public class ShortFormService {
     }
     
     @Async
-    public void generateThumbnailAsync(ShortForm shortForm) {
-        String videoKey = shortForm.getVideoKey();
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void generateThumbnailAsync(@NonNull Long shortFormId, String videoKey) {
         String thumbnailKey = awsS3Service.generateThumbnailKey(videoKey);
         
         try {
@@ -246,32 +275,59 @@ public class ShortFormService {
             
             if (thumbnailGenerated) {
                 // 2. 썸네일 생성 성공 시에만 DB 업데이트
-                updateThumbnailInDatabase(shortForm.getId(), thumbnailKey);
-                System.out.println("썸네일 생성 완료: " + videoKey + " -> " + thumbnailKey);
+                updateThumbnailInDatabase(shortFormId, thumbnailKey);
+                log.info("썸네일 생성 완료: {} -> {}", videoKey, thumbnailKey);
             } else {
-                System.err.println("썸네일 생성 실패: " + videoKey);
+                log.warn("썸네일 생성 실패: {}", videoKey);
             }
             
         } catch (Exception e) {
-            System.err.println("썸네일 생성 중 오류: " + videoKey + " - " + e.getMessage());
+            log.error("썸네일 생성 중 오류: {} - {}", videoKey, e.getMessage(), e);
             // 필요시 재시도 로직 추가 가능
         }
     }
     
     @Transactional
-    public void updateThumbnailInDatabase(Long shortFormId, String thumbnailKey) {
-        ShortForm shortForm = shortFormRepository.findById(shortFormId)
-                .orElseThrow(() -> new IllegalArgumentException("ShortForm not found: " + shortFormId));
+    public void updateThumbnailInDatabase(@NonNull Long shortFormId, String thumbnailKey) {
+        // shortFormId별 락 획득
+        ReentrantLock lock = shortFormUpdateLocks.computeIfAbsent(shortFormId, k -> new ReentrantLock());
         
-        shortForm.updateThumbnail(thumbnailKey);
-        shortFormRepository.save(shortForm);
+        lock.lock();
+        try {
+            ShortForm shortForm = shortFormRepository.findById(shortFormId)
+                    .orElseThrow(() -> new IllegalArgumentException("ShortForm not found: " + shortFormId));
+            
+            // 이미 썸네일이 설정되어 있다면 스킵
+            if (shortForm.getThumbnailKey() != null) {
+                log.debug("썸네일이 이미 설정되어 있음: {} -> {}", shortFormId, shortForm.getThumbnailKey());
+                return;
+            }
+            
+            shortForm.updateThumbnail(thumbnailKey);
+            shortFormRepository.save(shortForm);
+            log.info("썸네일 DB 업데이트 완료: {} -> {}", shortFormId, thumbnailKey);
+        } finally {
+            lock.unlock();
+            // 안전한 락 정리
+            shortFormUpdateLocks.computeIfPresent(shortFormId, (key, existingLock) -> {
+                if (existingLock == lock && !lock.hasQueuedThreads()) {
+                    return null;
+                }
+                return existingLock;
+            });
+        }
     }
     
     @Async
-    public void startAiProcessingAsync(ShortForm shortForm) {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void startAiProcessingAsync(@NonNull Long shortFormId, String videoKey) {
         try {
+            // 새로운 트랜잭션에서 엔티티 조회
+            ShortForm shortForm = shortFormRepository.findById(shortFormId)
+                    .orElseThrow(() -> new IllegalArgumentException("ShortForm not found: " + shortFormId));
+            
             // AI 처리 레코드 생성
-            ShortFormAi aiRecord = ShortFormAi.createPending(shortForm.getId());
+            @NonNull ShortFormAi aiRecord = ShortFormAi.createPending(shortFormId);
             shortFormAiRepository.save(aiRecord);
             
             // 숏폼 상태를 STT 처리 중으로 변경
@@ -279,20 +335,28 @@ public class ShortFormService {
             shortFormRepository.save(shortForm);
             
             // AI Pod에 처리 요청 전송
-            boolean aiJobStarted = requestAiProcessing(shortForm.getVideoKey());
+            boolean aiJobStarted = requestAiProcessing(videoKey);
             
             if (!aiJobStarted) {
-                log.warn("AI 처리 요청 실패, 상태를 FAILED로 변경: {}", shortForm.getVideoKey());
+                log.warn("AI 처리 요청 실패, 상태를 FAILED로 변경: {}", videoKey);
                 shortForm.updateStatus(ShortFormStatus.FAILED);
                 shortFormRepository.save(shortForm);
             }
             
         } catch (Exception e) {
-            System.err.println("AI 처리 시작 실패: " + shortForm.getVideoKey() + " - " + e.getMessage());
+            log.error("AI 처리 시작 실패: {} - {}", videoKey, e.getMessage(), e);
             
-            // 에러 상태로 업데이트
-            shortForm.updateStatus(ShortFormStatus.FAILED);
-            shortFormRepository.save(shortForm);
+            // 에러 상태로 업데이트 (새로운 트랜잭션에서)
+            try {
+                ShortForm shortForm = shortFormRepository.findById(shortFormId)
+                        .orElse(null);
+                if (shortForm != null) {
+                    shortForm.updateStatus(ShortFormStatus.FAILED);
+                    shortFormRepository.save(shortForm);
+                }
+            } catch (Exception updateException) {
+                log.error("ShortForm 상태 업데이트 실패: {} - {}", shortFormId, updateException.getMessage());
+            }
         }
     }
     
@@ -321,22 +385,23 @@ public class ShortFormService {
      * S3 Summary 파일에서 태그 정보를 비동기로 업데이트
      */
     @Async
-    public void updateTagsFromSummaryAsync(ShortForm shortForm) {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void updateTagsFromSummaryAsync(@NonNull Long shortFormId, String videoKey) {
         try {
-            List<String> tags = awsS3Service.extractTagsFromSummary(shortForm.getVideoKey());
+            List<String> tags = awsS3Service.extractTagsFromSummary(videoKey);
             
             if (!tags.isEmpty()) {
-                log.info("Summary에서 태그 추출 성공: {} - 태그 개수: {}", shortForm.getVideoKey(), tags.size());
+                log.info("Summary에서 태그 추출 성공: {} - 태그 개수: {}", videoKey, tags.size());
                 
                 // DB 업데이트
-                updateShortFormTags(shortForm.getId(), tags);
+                updateShortFormTags(shortFormId, tags);
             } else {
-                log.debug("Summary 파일에서 태그를 찾을 수 없음: {}", shortForm.getVideoKey());
+                log.debug("Summary 파일에서 태그를 찾을 수 없음: {}", videoKey);
             }
             
         } catch (Exception e) {
             log.warn("Summary에서 태그 추출 중 오류 (정상적인 경우일 수 있음): {} - {}", 
-                     shortForm.getVideoKey(), e.getMessage());
+                     videoKey, e.getMessage());
         }
     }
     
@@ -344,13 +409,28 @@ public class ShortFormService {
      * ShortForm의 태그 정보 업데이트
      */
     @Transactional
-    public void updateShortFormTags(Long shortFormId, List<String> tags) {
-        ShortForm shortForm = shortFormRepository.findById(shortFormId)
-                .orElseThrow(() -> new IllegalArgumentException("ShortForm not found: " + shortFormId));
+    public void updateShortFormTags(@NonNull Long shortFormId, List<String> tags) {
+        // shortFormId별 락 획득
+        ReentrantLock lock = shortFormUpdateLocks.computeIfAbsent(shortFormId, k -> new ReentrantLock());
         
-        shortForm.updateTags(tags);
-        shortFormRepository.save(shortForm);
-        
-        log.info("ShortForm 태그 업데이트 완료: {} - 태그: {}", shortFormId, tags);
+        lock.lock();
+        try {
+            ShortForm shortForm = shortFormRepository.findById(shortFormId)
+                    .orElseThrow(() -> new IllegalArgumentException("ShortForm not found: " + shortFormId));
+            
+            shortForm.updateTags(tags);
+            shortFormRepository.save(shortForm);
+            
+            log.info("ShortForm 태그 업데이트 완료 (락 획득): {} - 태그: {}", shortFormId, tags);
+        } finally {
+            lock.unlock();
+            // 안전한 락 정리
+            shortFormUpdateLocks.computeIfPresent(shortFormId, (key, existingLock) -> {
+                if (existingLock == lock && !lock.hasQueuedThreads()) {
+                    return null;
+                }
+                return existingLock;
+            });
+        }
     }
 }
