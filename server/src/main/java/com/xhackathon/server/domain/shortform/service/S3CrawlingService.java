@@ -18,7 +18,6 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 
 import java.nio.charset.StandardCharsets;
-import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
@@ -36,6 +35,180 @@ public class S3CrawlingService {
 
     @Value("${cloud.aws.s3.bucket}")
     private String bucket;
+
+    /**
+     * S3에서 videos 디렉토리의 모든 비디오 파일을 크롤링하여 ShortForm 생성
+     * 
+     * @param videoPrefix S3 videos 디렉토리 경로 (예: "videos/")
+     * @return 처리된 항목 개수
+     */
+    @Transactional
+    public int crawlS3Videos(String videoPrefix) {
+        log.info("S3 비디오 크롤링 시작 - prefix: {}", videoPrefix);
+        
+        try {
+            int processedCount = 0;
+            String continuationToken = null;
+            
+            do {
+                ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder()
+                        .bucket(bucket)
+                        .prefix(videoPrefix)
+                        .maxKeys(1000);
+                
+                if (continuationToken != null) {
+                    requestBuilder.continuationToken(continuationToken);
+                }
+                
+                ListObjectsV2Request listRequest = requestBuilder.build();
+                ListObjectsV2Response listResponse = s3Client.listObjectsV2(listRequest);
+                List<S3Object> videoFiles = listResponse.contents();
+                
+                log.info("발견된 비디오 파일 개수 (이번 페이지): {}", videoFiles.size());
+                
+                for (S3Object videoFile : videoFiles) {
+                    String videoKey = videoFile.key();
+                    if (isVideoFile(videoKey)) {
+                        try {
+                            processedCount += processVideoFile(videoKey) ? 1 : 0;
+                        } catch (Exception e) {
+                            log.error("비디오 파일 처리 실패: {} - {}", videoKey, e.getMessage(), e);
+                        }
+                    }
+                }
+                
+                continuationToken = listResponse.nextContinuationToken();
+                
+            } while (continuationToken != null);
+            
+            log.info("S3 비디오 크롤링 완료 - 총 {}개 파일 처리됨", processedCount);
+            return processedCount;
+            
+        } catch (Exception e) {
+            log.error("S3 비디오 크롤링 실패: {}", e.getMessage(), e);
+            throw new RuntimeException("S3 비디오 크롤링 실패", e);
+        }
+    }
+
+    /**
+     * 개별 비디오 파일을 처리하여 ShortForm 생성
+     */
+    private boolean processVideoFile(String videoKey) {
+        log.debug("비디오 파일 처리 시작: {}", videoKey);
+        
+        try {
+            // 1. 비디오 키에서 사용자 PID 추출
+            String userPid = extractUserPidFromVideoKey(videoKey);
+            if (userPid == null) {
+                log.warn("비디오 키에서 사용자 PID 추출 실패: {}", videoKey);
+                return false;
+            }
+            
+            // 2. 사용자 존재 확인
+            Optional<User> userOpt = userRepository.findByPid(userPid);
+            if (userOpt.isEmpty()) {
+                log.warn("사용자를 찾을 수 없음: {} (비디오: {})", userPid, videoKey);
+                return false;
+            }
+            
+            // 3. 기존 ShortForm 레코드가 있는지 확인
+            Optional<ShortForm> existingOpt = shortFormRepository.findByVideoKey(videoKey);
+            if (existingOpt.isPresent()) {
+                log.debug("기존 ShortForm 존재: {}", videoKey);
+                // 기존 레코드가 있으면 썸네일만 확인
+                ShortForm existing = existingOpt.get();
+                if (existing.getThumbnailKey() == null) {
+                    generateThumbnailIfNotExists(videoKey);
+                }
+                return true;
+            }
+            
+            // 4. 대응하는 summary 파일 찾기 (있으면 사용)
+            SummaryData summaryData = findAndReadSummaryForVideo(videoKey);
+            
+            // 5. 새 ShortForm 레코드 생성
+            createNewShortFormFromVideo(userPid, videoKey, summaryData);
+            log.info("새 ShortForm 생성 (비디오 크롤링): {}", videoKey);
+            
+            // 6. 썸네일이 없으면 비동기로 생성
+            generateThumbnailIfNotExists(videoKey);
+            
+            return true;
+            
+        } catch (Exception e) {
+            log.error("비디오 파일 처리 중 오류: {} - {}", videoKey, e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * 비디오 키에 대응하는 summary 파일 찾아서 읽기
+     */
+    private SummaryData findAndReadSummaryForVideo(String videoKey) {
+        try {
+            // 비디오 파일명에서 summary 파일명 추정
+            // 예: videos/user123/uuid_filename.mp4 -> summary/summary_uuid_filename.json
+            String fileName = videoKey.substring(videoKey.lastIndexOf("/") + 1);
+            String baseName = fileName.substring(0, fileName.lastIndexOf(".")); // 확장자 제거
+            
+            // summary 디렉토리에서 해당 파일 찾기
+            ListObjectsV2Request listRequest = ListObjectsV2Request.builder()
+                    .bucket(bucket)
+                    .prefix("summary/")
+                    .build();
+            
+            ListObjectsV2Response listResponse = s3Client.listObjectsV2(listRequest);
+            
+            for (S3Object object : listResponse.contents()) {
+                String summaryKey = object.key();
+                // summary 파일명에 baseName이 포함되어 있으면 해당 파일 사용
+                if (summaryKey.contains(baseName) && summaryKey.endsWith(".json")) {
+                    log.debug("대응하는 summary 파일 발견: {} -> {}", videoKey, summaryKey);
+                    return readSummaryFromS3(summaryKey);
+                }
+            }
+            
+            log.debug("대응하는 summary 파일 없음: {}", videoKey);
+            return null;
+            
+        } catch (Exception e) {
+            log.warn("Summary 파일 찾기 실패: {} - {}", videoKey, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 비디오 파일로부터 새 ShortForm 레코드 생성 (summary 없을 수도 있음)
+     */
+    private void createNewShortFormFromVideo(String userPid, String videoKey, SummaryData summaryData) {
+        String title;
+        String description;
+        List<String> tags;
+        
+        if (summaryData != null) {
+            title = generateTitleFromSummary(summaryData.summary);
+            description = summaryData.summary;
+            tags = summaryData.tags;
+        } else {
+            // summary가 없으면 비디오 파일명에서 제목 추출
+            String fileName = videoKey.substring(videoKey.lastIndexOf("/") + 1);
+            String baseName = fileName.substring(0, fileName.lastIndexOf(".")); // 확장자 제거
+            title = baseName.length() > 50 ? baseName.substring(0, 50) + "..." : baseName;
+            description = "";
+            tags = new ArrayList<>();
+        }
+        
+        ShortForm shortForm = new ShortForm(
+                userPid,
+                title,
+                description,
+                videoKey,
+                null, // duration은 나중에 설정
+                tags
+        );
+        
+        shortFormRepository.save(shortForm);
+    }
 
     /**
      * S3에서 summary 파일들을 크롤링하여 비디오와 사용자를 매핑

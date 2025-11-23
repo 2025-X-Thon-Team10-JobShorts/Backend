@@ -6,6 +6,7 @@ import com.xhackathon.server.domain.shortform.dto.request.ShortFormReelsRequest;
 import com.xhackathon.server.domain.shortform.dto.request.ShortFormFeedRequest;
 import com.xhackathon.server.domain.shortform.dto.request.ShortFormSearchRequest;
 import com.xhackathon.server.domain.shortform.dto.response.*;
+import com.xhackathon.server.domain.shortform.entity.ShortForm;
 import com.xhackathon.server.domain.shortform.service.ShortFormService;
 import com.xhackathon.server.domain.shortform.service.S3CrawlingService;
 import com.xhackathon.server.domain.shortform.repository.ShortFormRepository;
@@ -68,16 +69,13 @@ public class ShortFormController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String currentUserPid
     ) {
-        // Feed 조회 시 DB에 데이터가 없으면 자동으로 S3 크롤링 실행
+        // Feed 조회 시 모든 videos 디렉토리 크롤링 실행
         try {
-            long shortFormCount = shortFormRepository.count();
-            if (shortFormCount == 0) {
-                log.info("DB에 ShortForm 데이터가 없음. S3 크롤링 실행");
-                s3CrawlingService.crawlS3SummaryAndMapVideoUsers("summary/");
-                log.info("S3 크롤링 완료");
-            }
+            log.info("피드 조회 시 videos 디렉토리 크롤링 시작");
+            int processedCount = s3CrawlingService.crawlS3Videos("videos/");
+            log.info("피드 조회 시 videos 크롤링 완료 - {}개 파일 처리됨", processedCount);
         } catch (Exception e) {
-            log.warn("Feed 조회 중 S3 크롤링 실패, 계속 진행: {}", e.getMessage());
+            log.warn("Feed 조회 중 videos 크롤링 실패, 계속 진행: {}", e.getMessage());
         }
         
         return ResponseEntity.ok(shortFormService.getFeed(pageParam, size, currentUserPid));
@@ -114,6 +112,37 @@ public class ShortFormController {
             Map<String, Object> errorResponse = Map.of(
                     "success", false,
                     "message", "S3 크롤링 중 오류가 발생했습니다: " + e.getMessage(),
+                    "error", e.getClass().getSimpleName()
+            );
+            
+            return ResponseEntity.internalServerError().body(errorResponse);
+        }
+    }
+
+    /**
+     * S3에서 videos 디렉토리의 모든 비디오 파일을 크롤링하여 ShortForm 생성
+     * 관리자 기능
+     */
+    @PostMapping("/admin/crawl-videos")
+    public ResponseEntity<Map<String, Object>> crawlS3Videos(
+            @RequestParam(value = "videoPrefix", defaultValue = "videos/") String videoPrefix) {
+        
+        try {
+            int processedCount = s3CrawlingService.crawlS3Videos(videoPrefix);
+            
+            Map<String, Object> response = Map.of(
+                    "success", true,
+                    "message", "S3 비디오 크롤링이 성공적으로 완료되었습니다.",
+                    "processedCount", processedCount,
+                    "videoPrefix", videoPrefix
+            );
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            Map<String, Object> errorResponse = Map.of(
+                    "success", false,
+                    "message", "S3 비디오 크롤링 중 오류가 발생했습니다: " + e.getMessage(),
                     "error", e.getClass().getSimpleName()
             );
             
@@ -226,12 +255,12 @@ public class ShortFormController {
         try {
             // 이미 존재하는지 확인 후 생성
             if (userRepository.findByPid("testuser1").isEmpty()) {
-                User user1 = new User("testuser1", "testuser1", "password123", UserRole.JOB_SEEKER, "Test User 1");
+                User user1 = new User("testuser1", "testuser1", "password123", UserRole.USER, "Test User 1");
                 userRepository.save(user1);
             }
             
             if (userRepository.findByPid("testuser2").isEmpty()) {
-                User user2 = new User("testuser2", "testuser2", "password123", UserRole.JOB_SEEKER, "Test User 2");
+                User user2 = new User("testuser2", "testuser2", "password123", UserRole.USER, "Test User 2");
                 userRepository.save(user2);
             }
             

@@ -65,12 +65,12 @@ public class TestDataController {
         try {
             // 이미 존재하는지 확인 후 생성
             if (userRepository.findByPid("testuser1").isEmpty()) {
-                User user1 = new User("testuser1", "testuser1", "password123", UserRole.JOB_SEEKER, "Test User 1");
+                User user1 = new User("testuser1", "testuser1", "password123", UserRole.USER, "Test User 1");
                 userRepository.save(user1);
             }
             
             if (userRepository.findByPid("testuser2").isEmpty()) {
-                User user2 = new User("testuser2", "testuser2", "password123", UserRole.JOB_SEEKER, "Test User 2");
+                User user2 = new User("testuser2", "testuser2", "password123", UserRole.USER, "Test User 2");
                 userRepository.save(user2);
             }
             
